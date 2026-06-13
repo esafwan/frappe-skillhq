@@ -150,50 +150,166 @@ If the `user-frappe` MCP server is not running, not listed in available servers,
 
 Use when MCP is unavailable or user explicitly requests HTTP/curl access.
 
-Full reference: [references/rest-api.md](references/rest-api.md)
+### Authentication
 
-Quick summary:
+Every request requires token auth:
 
-- Auth header: `Authorization: token <API_KEY>:<API_SECRET>`
-- CRUD: `/api/resource/<DocType>[/<name>]`
-- Methods: `/api/method/<dotted.python.path>`
-- List params: `fields`, `filters`, `limit_page_length`, `limit_start`, `order_by`
+```http
+Authorization: token <API_KEY>:<API_SECRET>
+Content-Type: application/json
+Accept: application/json
+```
+
+API keys are generated from the Frappe User record under **API Access > Generate Keys**.
+
+### Endpoints
+
+```
+GET    /api/resource/<DOCTYPE>           # list documents
+GET    /api/resource/<DOCTYPE>/<NAME>    # get single document
+POST   /api/resource/<DOCTYPE>           # create document
+PUT    /api/resource/<DOCTYPE>/<NAME>    # update document
+DELETE /api/resource/<DOCTYPE>/<NAME>    # delete document
+GET    /api/method/<dotted.python.path>  # call whitelisted method
+POST   /api/method/<dotted.python.path>  # call whitelisted method
+```
+
+List query params: `fields` (JSON array), `filters` (JSON array of arrays), `limit_page_length` (int), `limit_start` (int), `order_by` (string).
+
+### Response format
+
+- Resource list/CRUD endpoints return results under the **`data`** key.
+- Method endpoints (`/api/method/`) return results under the **`message`** key.
+
+### curl examples
+
+**Verify auth:**
+```bash
+curl -s "http://localhost:8001/api/method/frappe.auth.get_logged_user" \
+  -H "Authorization: token KEY:SECRET" \
+  -H "Accept: application/json"
+```
+
+**List documents:**
+```bash
+curl -s "http://localhost:8001/api/resource/Customer?fields=[\"name\",\"customer_name\"]&limit_page_length=10" \
+  -H "Authorization: token KEY:SECRET" \
+  -H "Accept: application/json"
+```
+
+**Get one document:**
+```bash
+curl -s "http://localhost:8001/api/resource/Customer/CUST-0001" \
+  -H "Authorization: token KEY:SECRET" \
+  -H "Accept: application/json"
+```
+
+**Create document:**
+```bash
+curl -s -X POST "http://localhost:8001/api/resource/Lead" \
+  -H "Authorization: token KEY:SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"lead_name":"John Doe","email_id":"john@example.com"}'
+```
+
+**Update document:**
+```bash
+curl -s -X PUT "http://localhost:8001/api/resource/Lead/LEAD-0001" \
+  -H "Authorization: token KEY:SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"Converted"}'
+```
+
+**Delete document:**
+```bash
+curl -s -X DELETE "http://localhost:8001/api/resource/Lead/LEAD-0001" \
+  -H "Authorization: token KEY:SECRET" \
+  -H "Accept: application/json"
+```
 
 ## 3. Bench Console (Framework-Aware Debugging)
 
-Use when you need ORM-level inspection -- checking documents via `frappe.get_doc`, running `frappe.get_all` with filters, inspecting metadata, or validating app behavior after patches/migrations. Preferred over raw SQL because it respects Frappe's document model.
+Use when you need ORM-level inspection — checking documents via `frappe.get_doc`, running `frappe.get_all` with filters, inspecting metadata, or validating app behavior after patches/migrations. Preferred over raw SQL because queries execute through Frappe's document model, permissions system, and hooks.
 
-Full reference: [references/bench-console.md](references/bench-console.md)
+**Good for:** checking document existence, inspecting fields via ORM, filtered queries, record counts, DocType metadata, testing server-side snippets, investigating issues after patches.
 
-Quick summary:
+**Avoid for:** uncontrolled bulk production updates, intentionally bypassing business logic, or changes that belong in patches/migration scripts.
+
+### Setup
 
 ```bash
-cd /workspace/development/edge16
+cd /path/to/bench
+cat sites/currentsite.txt        # confirm active site
 bench --site <SITE_NAME> console
 ```
 
-Then use Frappe ORM: `frappe.get_doc()`, `frappe.get_all()`, `frappe.db.exists()`, `frappe.db.count()`, `frappe.get_meta()`, etc. Primarily for reads; controlled writes are possible but should be deliberate.
+### Essential operations
+
+```python
+# Existence check
+frappe.db.exists("Customer", "CUST-0001")
+
+# Fetch document
+doc = frappe.get_doc("Customer", "CUST-0001")
+
+# Query with filters
+frappe.get_all("Sales Invoice", filters={"status": "Paid"}, fields=["name", "customer"], limit=10)
+
+# Count records
+frappe.db.count("Lead")
+
+# Inspect DocType metadata
+meta = frappe.get_meta("Customer")
+[f.fieldname for f in meta.fields]
+
+# Write (use deliberately — always commit)
+doc = frappe.get_doc({"doctype": "ToDo", "description": "Test"})
+doc.insert()
+frappe.db.commit()   # console does NOT auto-commit
+```
+
+**Always call `frappe.db.commit()` after any write** — the console does not auto-commit.
+
+### When to use alternatives instead
+
+- Raw SQL inspection → use `bench mariadb`
+- External automation → use REST API or MCP
+- Interactive UI debugging → browser System Console
 
 ## 4. Bench MariaDB (Validation Only)
 
-Use **only for read-only inspection** when troubleshooting data issues. Never write to the DB directly for normal operations.
+Use **only for read-only SQL inspection** when troubleshooting raw database state. Never write directly to the database — use Frappe APIs, patches, or bench commands instead.
 
-Full reference: [references/bench-mariadb.md](references/bench-mariadb.md)
+**Frappe prefixes all DocType table names with `tab`** — e.g. `Customer` → `tabCustomer`, `Sales Invoice` → `tabSales Invoice`.
 
-Quick summary:
+### Setup
 
 ```bash
-cd /workspace/development/edge16
+cd /path/to/bench
+cat sites/currentsite.txt        # confirm active site
 bench --site <SITE_NAME> mariadb
 ```
 
-Then run `SELECT`, `SHOW`, `DESC`, `COUNT` queries only.
+### Permitted queries
+
+```sql
+SHOW TABLES LIKE 'tabCustomer%';
+DESC tabCustomer;
+SELECT name, customer_name FROM tabCustomer LIMIT 10;
+SELECT COUNT(*) FROM `tabSales Invoice` WHERE status = 'Paid';
+```
+
+### Prohibited commands
+
+Never run: `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, or `DROP`. Use Frappe REST API, MCP tools, `bench execute`, app patches, the DocType editor, or migrations for any data or schema changes.
+
+Exit with `\q` or `exit`.
 
 ## Decision flowchart
 
-1. Is the `user-frappe` MCP server available? -> Use MCP tools.
-2. MCP auth failed? -> Ask user for new key/secret, update `~/.cursor/mcp.json`.
-3. MCP unavailable entirely? -> Use REST API via curl/Shell tool.
-4. Need framework-aware debugging (ORM, metadata, hooks)? -> Use `bench console`.
-5. Need to inspect raw DB state for debugging? -> Use `bench mariadb` (read-only).
-6. User explicitly asks for curl/REST? -> Use REST API.
+1. Is the `user-frappe` MCP server available? → Use MCP tools.
+2. MCP auth failed? → Ask user for new key/secret, update MCP config.
+3. MCP unavailable entirely? → Use REST API via curl.
+4. Need framework-aware debugging (ORM, metadata, hooks)? → Use `bench console`.
+5. Need to inspect raw DB state? → Use `bench mariadb` (read-only).
+6. User explicitly asks for curl/REST? → Use REST API.

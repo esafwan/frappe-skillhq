@@ -74,6 +74,30 @@ Once linked, invoke any skill by name in your agent session:
 
 ---
 
+## Companion Skills
+
+The skills below are maintained as separate repos because they are complex,
+standalone tools with their own scripts and release cadence. They are
+recommended companions to this pack:
+
+| Skill | Repo | What it adds |
+| :--- | :--- | :--- |
+| `doctype-skills` | [`esafwan/doctype_skills`](https://github.com/esafwan/doctype_skills) | Generate production-correct Frappe DocType JSON from business requirements via an IR → builder → validator → repair pipeline. Use this when you need to scaffold many DocTypes automatically; use `frappe-syntax-doctypes` inside this pack for quick syntax reference. |
+
+Install it the same way — clone once and symlink into your agent's skills
+directory:
+
+```bash
+git clone git@github.com:esafwan/doctype_skills.git ~/.ai-skills/doctype-skills
+ln -sfn ~/.ai-skills/doctype-skills ~/.claude/skills/doctype_skills
+ln -sfn ~/.ai-skills/doctype-skills ~/.kimi-code/skills/doctype_skills
+ln -sfn ~/.ai-skills/doctype-skills ~/.opencode/skills/doctype_skills
+ln -sfn ~/.ai-skills/doctype-skills ~/.codex/skills/doctype_skills
+ln -sfn ~/.ai-skills/doctype-skills ~/.pi/agent/skills/doctype_skills
+```
+
+---
+
 ## Skill Index
 
 ### 🤖 Agents — 5 skills
